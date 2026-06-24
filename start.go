@@ -226,8 +226,6 @@ func main() {
 	// Calculate final stats
 	stats.TotalDuration = time.Since(startTime)
 	if stats.TotalRequests > 0 {
-		// Perhitungan AvgDuration. Perhatikan bahwa ini adalah rata-rata dari total waktu dibagi total request.
-		// Ini mungkin tidak sepenuhnya akurat jika ada banyak request yang gagal atau waktu totalnya sangat pendek.
 		stats.AvgDuration = time.Duration(int64(stats.TotalDuration) / stats.TotalRequests)
 	}
 
@@ -248,15 +246,14 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				reqBodyReader = bytes.NewBufferString(requestBody) // Buat io.Reader dari string body
 			}
 
-			req, err := http.NewRequest(method, targetURL, reqBodyReader) // Gunakan reqBodyReader
+			req, err := http.NewRequest(method, targetURL, reqBodyReader)
 			if err != nil {
 				mu.Lock()
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					// Perbaikan output debug: Gunakan Sprintf dengan hati-hati atau Fprintln
-					debugMsg := fmt.Sprintf("%s[DEBUG] Error creating request: %v (Duration: %v)%s", colorGray, err, time.Since(startTime), colorReset)
-					fmt.Fprintln(os.Stdout, debugMsg) // Gunakan Fprintln untuk mencetak string
+					// Debug log yang lebih sederhana dan bersih
+					fmt.Fprintf(os.Stdout, "%s[DEBUG] Error creating request: %v (Duration: %v)%s\n", colorGray, err, time.Since(startTime), colorReset)
 				}
 				mu.Unlock()
 				continue
@@ -277,33 +274,27 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
-					debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s", colorGray, targetURL, err, duration, colorReset)
-					fmt.Fprintln(os.Stdout, debugMsg)
+					fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s failed: %v (Duration: %v)%s\n", colorGray, targetURL, err, duration, colorReset)
 				}
 			} else {
-				// Respons berhasil diterima (tidak ada error koneksi/timeout)
 				statusCode := resp.StatusCode
-				defer resp.Body.Close() // Pastikan body ditutup
+				defer resp.Body.Close()
 
 				if statusCode < 200 || statusCode >= 300 {
-					// Status code bukan 2xx (error pada server atau client)
 					stats.FailedRequests++
 					if debugMode {
-						bodyBytes, _ := io.ReadAll(resp.Body) // Baca body untuk debug
+						bodyBytes, _ := io.ReadAll(resp.Body)
 						respBody := string(bodyBytes)
-						// Perbaikan format debug: Pastikan argumen sesuai dengan placeholder
 						statusCodeColor := getStatusCodeColor(statusCode)
-						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s",
+						// Debug log yang lebih bersih
+						fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s\n",
 							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, respBody, colorGray, colorReset)
-						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				} else {
-					// Permintaan sukses (status code 2xx)
 					stats.SuccessRequests++
 					bodyBytes, _ := io.ReadAll(resp.Body)
 					stats.TotalBytes += int64(len(bodyBytes))
 
-					// Update min/max duration HANYA untuk permintaan yang SUKSES
 					if duration < stats.MinDuration {
 						stats.MinDuration = duration
 					}
@@ -312,9 +303,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 					}
 					if debugMode {
 						statusCodeColor := getStatusCodeColor(statusCode)
-						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s",
+						// Debug log yang lebih bersih
+						fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s\n",
 							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
-						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				}
 			}
