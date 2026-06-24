@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"strconv"  // <--- Tambahkan import ini!
 )
 
 type LoadTestStats struct {
@@ -260,3 +261,4 @@ func printStats(stats *LoadTestStats) {
 		fmt.Printf("Success Rate:       %.2f%%\n", successRate)
 	}
 }
+
