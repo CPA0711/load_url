@@ -150,16 +150,13 @@ func main() {
 
 	// --- Banner dan Informasi Awal ---
 	bannerCPA := `
-   ______      ________
-  / ____/___  / ____/ /______
- / / __/ __ \/ / __/ __/ ___/
-/ /_/ / /_/ / /_/ / /_/ /
-\____/\____/\____/\__/_/
-`
+╭─╴╭─╮╭─╮   ╭─╴╷  ╭─╮╭─╮╶┬╮
+│  ├─╯├─┤   ├╴ │  │ ││ │ ││
+╰─╴╵  ╵ ╵   ╵  ╰─╴╰─╯╰─╯╶┴╯
 	fmt.Printf("%s%s%s", colorCyan, bannerCPA, colorReset)
 	// ----------------------------------------------
 
-	fmt.Printf("=== Load Testing Started ===\n")
+	fmt.Printf("==========> CPA FLOOD STARTING <===========\n")
 	// Kurangi detail yang ditampilkan di sini untuk kesederhanaan
 	fmt.Printf("Target: %s\n", targetURL)
 	fmt.Printf("Method: %s, Concurrency: %d, Duration: %v, Timeout: %v\n", method, concurrency, duration, timeout)
