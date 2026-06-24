@@ -124,9 +124,6 @@ func getStatusCodeColor(statusCode int) string {
 
 func main() {
 	// --- Input User ---
-	// Kita akan mengurangi permintaan input untuk menyederhanakan output.
-	// Mode debug akan dinonaktifkan secara default untuk output yang lebih bersih.
-	// Pengguna masih bisa mengaktifkannya jika perlu.
 	debugModeInput := getUserInput("Enable debug mode? (yes/no)", "no")
 	debugMode := strings.ToLower(debugModeInput) == "yes"
 
@@ -140,7 +137,6 @@ func main() {
 	var requestBody string = ""
 	var contentType string = ""
 
-	// Hanya minta body dan content-type jika method membutuhkannya
 	if method == "POST" || method == "PUT" || method == "PATCH" {
 		requestBody = getUserInput("Enter request body (leave empty for none)", "")
 		if requestBody != "" {
@@ -148,17 +144,16 @@ func main() {
 		}
 	}
 
-	// --- Banner dan Informasi Awal ---
-	bannerCPA := `
+	// --- Banner Baru ---
+	bannerArt := `
 ╭─╴╭─╮╭─╮   ╭─╴╷  ╭─╮╭─╮╶┬╮
 │  ├─╯├─┤   ├╴ │  │ ││ │ ││
 ╰─╴╵  ╵ ╵   ╵  ╰─╴╰─╯╰─╯╶┴╯
-.
-	fmt.Printf("%s%s%s", colorCyan, bannerCPA, colorReset)
+`
+	fmt.Printf("%s%s%s", colorCyan, bannerArt, colorReset)
 	// ----------------------------------------------
 
-	fmt.Printf("==========> CPA FLOOD STARTING <===========\n")
-	// Kurangi detail yang ditampilkan di sini untuk kesederhanaan
+	fmt.Printf("=== CPA FLOOD Started ===\n")
 	fmt.Printf("Target: %s\n", targetURL)
 	fmt.Printf("Method: %s, Concurrency: %d, Duration: %v, Timeout: %v\n", method, concurrency, duration, timeout)
 	if requestBody != "" {
@@ -226,7 +221,6 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					// Debug output yang sangat disederhanakan: hanya error pembuatan request
 					debugMsg := fmt.Sprintf("[DEBUG] Err creating req: %v", err)
 					fmt.Fprintln(os.Stdout, debugMsg)
 				}
@@ -248,7 +242,6 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
-					// Debug output yang disederhanakan: error request
 					debugMsg := fmt.Sprintf("[DEBUG] Req %s failed: %v", targetURL, err)
 					fmt.Fprintln(os.Stdout, debugMsg)
 				}
@@ -259,30 +252,28 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				if statusCode < 200 || statusCode >= 300 {
 					stats.FailedRequests++
 					if debugMode {
-						// Debug output yang disederhanakan: status error
 						statusCodeColor := getStatusCodeColor(statusCode)
 						debugMsg := fmt.Sprintf("[DEBUG] Req %s status %s%d%s: %v", targetURL, statusCodeColor, statusCode, colorReset, duration)
 						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				} else {
 					stats.SuccessRequests++
-					// Baca body hanya jika debug mode aktif untuk mengukur byte
 					if debugMode {
-						bodyBytes, _ := io.ReadAll(resp.Body)
+						bodyBytes, _ := io.ReadAll(resp.Body) // Baca body hanya untuk menghitung byte
 						stats.TotalBytes += int64(len(bodyBytes))
-						// Update min/max duration HANYA untuk permintaan yang SUKSES
+
 						if duration < stats.MinDuration {
 							stats.MinDuration = duration
 						}
 						if duration > stats.MaxDuration {
 							stats.MaxDuration = duration
 						}
-						// Debug output yang disederhanakan: sukses
+
 						statusCodeColor := getStatusCodeColor(statusCode)
 						debugMsg := fmt.Sprintf("[DEBUG] Req %s status %s%d%s: %v (Bytes: %d)", targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes))
 						fmt.Fprintln(os.Stdout, debugMsg)
 					} else {
-						// Jika tidak debug, kita tetap perlu mengukur durasi untuk min/max
+						// Jika tidak debug, tetap perlu mengukur durasi untuk min/max
 						if duration < stats.MinDuration {
 							stats.MinDuration = duration
 						}
@@ -290,7 +281,7 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 							stats.MaxDuration = duration
 						}
 						// Opsional: Tampilkan progres singkat tanpa debug
-						// fmt.Print(".") // Contoh: cetak titik untuk setiap sukses
+						// fmt.Print(".")
 					}
 				}
 			}
@@ -326,3 +317,4 @@ func printSimplifiedStats(stats *LoadTestStats) {
 		fmt.Printf("Success Rate: %s%.2f%%%s\n", successColor, successRate, colorReset)
 	}
 }
+
