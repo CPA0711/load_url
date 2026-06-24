@@ -1,10 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,21 +21,35 @@ type LoadTestStats struct {
 	TotalBytes      int64
 }
 
+// Konstanta untuk kode warna ANSI
+const (
+	colorCyan  = "\033[36m"
+	colorReset = "\033[0m"
+)
+
 func main() {
-	// Parse command line flags
-	url := flag.String("url", "http://localhost:8080", "Target URL to test")
-	concurrency := flag.Int("concurrency", 10, "Number of concurrent requests")
-	duration := flag.Duration("duration", 30*time.Second, "Duration of the test")
-	timeout := flag.Duration("timeout", 10*time.Second, "Request timeout")
-	method := flag.String("method", "GET", "HTTP method (GET, POST, etc)")
-	flag.Parse()
+	// --- Input Parameter Manual untuk SEMUA Parameter ---
+	targetURL := "http://localhost:8080"      // Ganti dengan URL target Anda
+	concurrency := 10                         // Jumlah permintaan bersamaan
+	duration := 30 * time.Second              // Durasi pengujian
+	timeout := 10 * time.Second               // Batas waktu permintaan
+	method := "GET"                           // Metode HTTP (GET, POST, dll.)
+	// ----------------------------------------------------
+
+	// --- Tambahkan Banner CPA dengan Warna Cyan ---
+	bannerCPA := `
+   ┏━╸┏━┓┏━┓   ╺┳╸┏━┓┏━┓╻  ┏━┓
+   ┃    ┣━┛┣━┫    ┃  ┃  ┃┃  ┃┃   ┗━┓
+   ┗━╸╹    ╹  ╹    ╹  ┗━┛┗━┛┗━╸┗━┛
+	fmt.Printf("%s%s%s", colorCyan, bannerCPA, colorReset)
+	// ----------------------------------------------
 
 	fmt.Printf("=== Load Testing Started ===\n")
-	fmt.Printf("Target URL: %s\n", *url)
-	fmt.Printf("Concurrency: %d\n", *concurrency)
-	fmt.Printf("Duration: %v\n", *duration)
-	fmt.Printf("Timeout: %v\n", *timeout)
-	fmt.Printf("Method: %s\n\n", *method)
+	fmt.Printf("Target URL: %s\n", targetURL)
+	fmt.Printf("Concurrency: %d\n", concurrency)
+	fmt.Printf("Duration: %v\n", duration)
+	fmt.Printf("Timeout: %v\n", timeout)
+	fmt.Printf("Method: %s\n\n", method)
 
 	// Initialize stats
 	stats := &LoadTestStats{
@@ -45,7 +59,7 @@ func main() {
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: *timeout,
+		Timeout: timeout,
 	}
 
 	// Channel to control test duration
@@ -57,16 +71,16 @@ func main() {
 
 	// Schedule stop after duration
 	go func() {
-		time.Sleep(*duration)
+		time.Sleep(duration)
 		close(stopChan)
 	}()
 
 	// Launch concurrent workers
-	for i := 0; i < *concurrency; i++ {
+	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			worker(client, *url, *method, stopChan, stats, &mu)
+			worker(client, targetURL, method, stopChan, stats, &mu)
 		}()
 	}
 
@@ -136,8 +150,14 @@ func printStats(stats *LoadTestStats) {
 	fmt.Printf("Max Response Time:  %v\n", stats.MaxDuration)
 	fmt.Printf("Avg Response Time:  %v\n", stats.AvgDuration)
 	fmt.Printf("Total Bytes:        %d\n", stats.TotalBytes)
-	fmt.Printf("Requests/sec:       %.2f\n", float64(stats.TotalRequests)/stats.TotalDuration.Seconds())
-	fmt.Printf("Throughput (KB/s):  %.2f\n", float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
+
+	if stats.TotalDuration.Seconds() > 0 {
+		fmt.Printf("Requests/sec:       %.2f\n", float64(stats.TotalRequests)/stats.TotalDuration.Seconds())
+		fmt.Printf("Throughput (KB/s):  %.2f\n", float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
+	} else {
+		fmt.Printf("Requests/sec:       N/A (Total duration is zero)\n")
+		fmt.Printf("Throughput (KB/s):  N/A (Total duration is zero)\n")
+	}
 
 	if stats.TotalRequests > 0 {
 		successRate := (float64(stats.SuccessRequests) / float64(stats.TotalRequests)) * 100
