@@ -57,7 +57,6 @@ func getUserInput(prompt string, defaultValue string) string {
 // getUserSecondsInput meminta input angka bulat (dalam detik) dan mengembalikannya sebagai time.Duration.
 func getUserSecondsInput(prompt string, defaultValue time.Duration) time.Duration {
 	reader := bufio.NewReader(os.Stdin)
-	// Tampilkan default dalam format detik agar lebih mudah dibaca
 	fmt.Printf("%s (default: %.0fs): ", prompt, defaultValue.Seconds())
 	input, err := reader.ReadString('\n')
 	if err != nil {
@@ -69,14 +68,12 @@ func getUserSecondsInput(prompt string, defaultValue time.Duration) time.Duratio
 		return defaultValue
 	}
 
-	// Coba konversi input ke integer
 	seconds, err := strconv.Atoi(input)
 	if err != nil {
 		fmt.Printf("Invalid input '%s'. Please enter a whole number of seconds. Using default: %.0fs\n", input, defaultValue.Seconds())
 		return defaultValue
 	}
 
-	// Konversi detik ke time.Duration
 	return time.Duration(seconds) * time.Second
 }
 
@@ -128,31 +125,23 @@ func getStatusCodeColor(statusCode int) string {
 func main() {
 	// --- Ambil Input Parameter dari Pengguna secara Interaktif ---
 
-	// Mode Debug
 	debugModeInput := getUserInput("Enable debug mode? (yes/no)", "no")
 	debugMode := strings.ToLower(debugModeInput) == "yes"
 
-	// Meminta URL
 	targetURL := getUserInput("Enter target URL", "http://localhost:8080")
 
-	// Meminta Concurrency
 	concurrency := getUserPositiveIntInput("Enter number of concurrent requests", 10)
 
-	// Meminta Duration (menggunakan getUserSecondsInput)
 	duration := getUserSecondsInput("Enter test duration (in seconds)", 30*time.Second)
 
-	// Meminta Timeout (menggunakan getUserSecondsInput)
 	timeout := getUserSecondsInput("Enter request timeout (in seconds)", 10*time.Second)
 
-	// Meminta Method
 	method := getUserInput("Enter HTTP method (GET, POST, PUT, DELETE, etc.)", "GET")
 	method = strings.ToUpper(method)
 
-	// Inisialisasi body dan contentType sebagai string kosong.
 	var requestBody string = ""
 	var contentType string = ""
 
-	// Tentukan apakah method memerlukan body (misal: POST, PUT, PATCH)
 	if method == "POST" || method == "PUT" || method == "PATCH" {
 		requestBody = getUserInput("Enter request body (leave empty for none)", "")
 		if requestBody != "" {
@@ -190,49 +179,40 @@ func main() {
 	}
 	fmt.Println()
 
-	// Initialize stats
 	stats := &LoadTestStats{
-		MinDuration: time.Hour, // Inisialisasi MinDuration ke nilai yang sangat besar
+		MinDuration: time.Hour,
 	}
-	var mu sync.Mutex // Mutex untuk melindungi akses ke stats
+	var mu sync.Mutex
 
-	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: timeout,
 	}
 
-	// Channel to control test duration
 	stopChan := make(chan struct{})
 	var wg sync.WaitGroup
 
-	// Start timer
 	startTime := time.Now()
 
-	// Schedule stop after duration
 	go func() {
-		time.Sleep(duration) // Gunakan durasi yang sudah dikonversi
-		close(stopChan)      // Kirim sinyal untuk menghentikan worker
+		time.Sleep(duration)
+		close(stopChan)
 	}()
 
-	// Launch concurrent workers
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
-			defer wg.Done() // Pastikan wg.Done() dipanggil saat goroutine selesai
+			defer wg.Done()
 			worker(client, targetURL, method, requestBody, contentType, stopChan, stats, &mu, debugMode)
 		}()
 	}
 
-	// Wait for all workers to complete
 	wg.Wait()
 
-	// Calculate final stats
 	stats.TotalDuration = time.Since(startTime)
 	if stats.TotalRequests > 0 {
 		stats.AvgDuration = time.Duration(int64(stats.TotalDuration) / stats.TotalRequests)
 	}
 
-	// Print results
 	printStats(stats)
 }
 
@@ -255,8 +235,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
+					// Menggunakan fmt.Sprintln untuk mencetak satu baris pesan debug yang sudah diformat
 					debugMsg := fmt.Sprintf("%s[DEBUG] Error creating request: %v (Duration: %v)%s", colorGray, err, time.Since(startTime), colorReset)
-					fmt.Fprintln(os.Stdout, debugMsg)
+					fmt.Fprintln(os.Stdout, debugMsg) // Fprintln akan menambahkan newline secara otomatis
 				}
 				mu.Unlock()
 				continue
