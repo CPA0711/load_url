@@ -54,10 +54,11 @@ func getUserInput(prompt string, defaultValue string) string {
 	return input
 }
 
-// getUserDurationInput meminta input durasi dari pengguna dengan nilai default.
-func getUserDurationInput(prompt string, defaultValue time.Duration) time.Duration {
+// getUserSecondsInput meminta input angka bulat (dalam detik) dan mengembalikannya sebagai time.Duration.
+func getUserSecondsInput(prompt string, defaultValue time.Duration) time.Duration {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s (default: %v): ", prompt, defaultValue)
+	// Tampilkan default dalam format detik agar lebih mudah dibaca
+	fmt.Printf("%s (default: %.0fs): ", prompt, defaultValue.Seconds())
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		fmt.Printf("Error reading input: %v\n", err)
@@ -67,12 +68,16 @@ func getUserDurationInput(prompt string, defaultValue time.Duration) time.Durati
 	if input == "" {
 		return defaultValue
 	}
-	duration, err := time.ParseDuration(input)
+
+	// Coba konversi input ke integer
+	seconds, err := strconv.Atoi(input)
 	if err != nil {
-		fmt.Printf("Invalid duration format '%s'. Using default: %v\n", input, defaultValue)
+		fmt.Printf("Invalid input '%s'. Please enter a whole number of seconds. Using default: %.0fs\n", input, defaultValue.Seconds())
 		return defaultValue
 	}
-	return duration
+
+	// Konversi detik ke time.Duration
+	return time.Duration(seconds) * time.Second
 }
 
 // getUserIntInput meminta input integer dari pengguna dengan nilai default.
@@ -133,11 +138,11 @@ func main() {
 	// Meminta Concurrency
 	concurrency := getUserPositiveIntInput("Enter number of concurrent requests", 10)
 
-	// Meminta Duration
-	duration := getUserDurationInput("Enter test duration", 30*time.Second)
+	// Meminta Duration (menggunakan getUserSecondsInput)
+	duration := getUserSecondsInput("Enter test duration (in seconds)", 30*time.Second)
 
-	// Meminta Timeout
-	timeout := getUserDurationInput("Enter request timeout", 10*time.Second)
+	// Meminta Timeout (menggunakan getUserSecondsInput)
+	timeout := getUserSecondsInput("Enter request timeout (in seconds)", 10*time.Second)
 
 	// Meminta Method
 	method := getUserInput("Enter HTTP method (GET, POST, PUT, DELETE, etc.)", "GET")
@@ -205,8 +210,8 @@ func main() {
 
 	// Schedule stop after duration
 	go func() {
-		time.Sleep(duration)
-		close(stopChan) // Kirim sinyal untuk menghentikan worker
+		time.Sleep(duration) // Gunakan durasi yang sudah dikonversi
+		close(stopChan)      // Kirim sinyal untuk menghentikan worker
 	}()
 
 	// Launch concurrent workers
@@ -250,8 +255,8 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					// Menggunakan fmt.Fprintf dengan string yang lengkap
-					fmt.Fprintf(os.Stdout, "%s[DEBUG] Error creating request: %v (Duration: %v)%s\n", colorGray, err, time.Since(startTime), colorReset)
+					debugMsg := fmt.Sprintf("%s[DEBUG] Error creating request: %v (Duration: %v)%s", colorGray, err, time.Since(startTime), colorReset)
+					fmt.Fprintln(os.Stdout, debugMsg)
 				}
 				mu.Unlock()
 				continue
@@ -271,7 +276,8 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
-					fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s failed: %v (Duration: %v)%s\n", colorGray, targetURL, err, duration, colorReset)
+					debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s", colorGray, targetURL, err, duration, colorReset)
+					fmt.Fprintln(os.Stdout, debugMsg)
 				}
 			} else {
 				statusCode := resp.StatusCode
@@ -283,9 +289,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 						bodyBytes, _ := io.ReadAll(resp.Body)
 						respBody := string(bodyBytes)
 						statusCodeColor := getStatusCodeColor(statusCode)
-						// Debug log yang lebih bersih, memastikan semua argumen sesuai
-						fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s\n",
+						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s",
 							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, respBody, colorGray, colorReset)
+						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				} else {
 					stats.SuccessRequests++
@@ -300,9 +306,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 					}
 					if debugMode {
 						statusCodeColor := getStatusCodeColor(statusCode)
-						// Debug log yang lebih bersih
-						fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s\n",
+						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s",
 							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
+						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				}
 			}
