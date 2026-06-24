@@ -123,25 +123,24 @@ func getStatusCodeColor(statusCode int) string {
 }
 
 func main() {
-	// --- Ambil Input Parameter dari Pengguna secara Interaktif ---
-
+	// --- Input User ---
+	// Kita akan mengurangi permintaan input untuk menyederhanakan output.
+	// Mode debug akan dinonaktifkan secara default untuk output yang lebih bersih.
+	// Pengguna masih bisa mengaktifkannya jika perlu.
 	debugModeInput := getUserInput("Enable debug mode? (yes/no)", "no")
 	debugMode := strings.ToLower(debugModeInput) == "yes"
 
 	targetURL := getUserInput("Enter target URL", "http://localhost:8080")
-
 	concurrency := getUserPositiveIntInput("Enter number of concurrent requests", 10)
-
 	duration := getUserSecondsInput("Enter test duration (in seconds)", 30*time.Second)
-
 	timeout := getUserSecondsInput("Enter request timeout (in seconds)", 10*time.Second)
-
 	method := getUserInput("Enter HTTP method (GET, POST, PUT, DELETE, etc.)", "GET")
 	method = strings.ToUpper(method)
 
 	var requestBody string = ""
 	var contentType string = ""
 
+	// Hanya minta body dan content-type jika method membutuhkannya
 	if method == "POST" || method == "PUT" || method == "PATCH" {
 		requestBody = getUserInput("Enter request body (leave empty for none)", "")
 		if requestBody != "" {
@@ -149,9 +148,7 @@ func main() {
 		}
 	}
 
-	// -------------------------------------------------------------
-
-	// --- Banner CPA dengan Warna Cyan ---
+	// --- Banner dan Informasi Awal ---
 	bannerCPA := `
    ______      ________
   / ____/___  / ____/ /______
@@ -163,22 +160,15 @@ func main() {
 	// ----------------------------------------------
 
 	fmt.Printf("=== Load Testing Started ===\n")
-	fmt.Printf("Debug Mode: %t\n", debugMode)
-	fmt.Printf("Target URL: %s\n", targetURL)
-	fmt.Printf("Concurrency: %d\n", concurrency)
-	fmt.Printf("Duration: %v\n", duration)
-	fmt.Printf("Timeout: %v\n", timeout)
-	fmt.Printf("Method: %s\n", method)
+	// Kurangi detail yang ditampilkan di sini untuk kesederhanaan
+	fmt.Printf("Target: %s\n", targetURL)
+	fmt.Printf("Method: %s, Concurrency: %d, Duration: %v, Timeout: %v\n", method, concurrency, duration, timeout)
 	if requestBody != "" {
-		fmt.Printf("Content-Type: %s\n", contentType)
-		if debugMode && len(requestBody) < 200 {
-			fmt.Printf("Request Body: %s\n", requestBody)
-		} else if debugMode && len(requestBody) >= 200 {
-			fmt.Printf("Request Body: [Too long to display]\n")
-		}
+		fmt.Printf("Body provided (Content-Type: %s)\n", contentType)
 	}
-	fmt.Println()
+	fmt.Println() // Baris kosong untuk pemisah
 
+	// --- Setup Pengujian ---
 	stats := &LoadTestStats{
 		MinDuration: time.Hour,
 	}
@@ -198,6 +188,7 @@ func main() {
 		close(stopChan)
 	}()
 
+	// --- Launch Workers ---
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
@@ -206,17 +197,19 @@ func main() {
 		}()
 	}
 
-	wg.Wait()
+	wg.Wait() // Tunggu semua worker selesai
 
+	// --- Statistik Akhir ---
 	stats.TotalDuration = time.Since(startTime)
 	if stats.TotalRequests > 0 {
 		stats.AvgDuration = time.Duration(int64(stats.TotalDuration) / stats.TotalRequests)
 	}
 
-	printStats(stats)
+	printSimplifiedStats(stats) // Gunakan fungsi statistik yang disederhanakan
 }
 
-// worker melakukan satu request HTTP
+// worker melakukan satu request HTTP.
+// Debug output di sini disederhanakan.
 func worker(client *http.Client, targetURL, method, requestBody, contentType string, stopChan chan struct{}, stats *LoadTestStats, mu *sync.Mutex, debugMode bool) {
 	for {
 		select {
@@ -235,9 +228,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					// Menggunakan fmt.Sprintln untuk mencetak satu baris pesan debug yang sudah diformat
-					debugMsg := fmt.Sprintf("%s[DEBUG] Error creating request: %v (Duration: %v)%s", colorGray, err, time.Since(startTime), colorReset)
-					fmt.Fprintln(os.Stdout, debugMsg) // Fprintln akan menambahkan newline secara otomatis
+					// Debug output yang sangat disederhanakan: hanya error pembuatan request
+					debugMsg := fmt.Sprintf("[DEBUG] Err creating req: %v", err)
+					fmt.Fprintln(os.Stdout, debugMsg)
 				}
 				mu.Unlock()
 				continue
@@ -257,7 +250,8 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
-					debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s", colorGray, targetURL, err, duration, colorReset)
+					// Debug output yang disederhanakan: error request
+					debugMsg := fmt.Sprintf("[DEBUG] Req %s failed: %v", targetURL, err)
 					fmt.Fprintln(os.Stdout, debugMsg)
 				}
 			} else {
@@ -267,29 +261,38 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				if statusCode < 200 || statusCode >= 300 {
 					stats.FailedRequests++
 					if debugMode {
-						bodyBytes, _ := io.ReadAll(resp.Body)
-						respBody := string(bodyBytes)
+						// Debug output yang disederhanakan: status error
 						statusCodeColor := getStatusCodeColor(statusCode)
-						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s",
-							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, respBody, colorGray, colorReset)
+						debugMsg := fmt.Sprintf("[DEBUG] Req %s status %s%d%s: %v", targetURL, statusCodeColor, statusCode, colorReset, duration)
 						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				} else {
 					stats.SuccessRequests++
-					bodyBytes, _ := io.ReadAll(resp.Body)
-					stats.TotalBytes += int64(len(bodyBytes))
-
-					if duration < stats.MinDuration {
-						stats.MinDuration = duration
-					}
-					if duration > stats.MaxDuration {
-						stats.MaxDuration = duration
-					}
+					// Baca body hanya jika debug mode aktif untuk mengukur byte
 					if debugMode {
+						bodyBytes, _ := io.ReadAll(resp.Body)
+						stats.TotalBytes += int64(len(bodyBytes))
+						// Update min/max duration HANYA untuk permintaan yang SUKSES
+						if duration < stats.MinDuration {
+							stats.MinDuration = duration
+						}
+						if duration > stats.MaxDuration {
+							stats.MaxDuration = duration
+						}
+						// Debug output yang disederhanakan: sukses
 						statusCodeColor := getStatusCodeColor(statusCode)
-						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s",
-							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
+						debugMsg := fmt.Sprintf("[DEBUG] Req %s status %s%d%s: %v (Bytes: %d)", targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes))
 						fmt.Fprintln(os.Stdout, debugMsg)
+					} else {
+						// Jika tidak debug, kita tetap perlu mengukur durasi untuk min/max
+						if duration < stats.MinDuration {
+							stats.MinDuration = duration
+						}
+						if duration > stats.MaxDuration {
+							stats.MaxDuration = duration
+						}
+						// Opsional: Tampilkan progres singkat tanpa debug
+						// fmt.Print(".") // Contoh: cetak titik untuk setiap sukses
 					}
 				}
 			}
@@ -298,24 +301,20 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 	}
 }
 
-// printStats menampilkan hasil pengujian beban.
-func printStats(stats *LoadTestStats) {
+// printSimplifiedStats menampilkan hasil pengujian beban dengan format yang lebih ringkas.
+func printSimplifiedStats(stats *LoadTestStats) {
 	fmt.Printf("\n=== Load Testing Results ===\n")
-	fmt.Printf("Total Requests:     %d\n", stats.TotalRequests)
-	fmt.Printf("Successful:         %d\n", stats.SuccessRequests)
-	fmt.Printf("Failed:             %d\n", stats.FailedRequests)
-	fmt.Printf("Total Duration:     %v\n", stats.TotalDuration)
-	fmt.Printf("Min Response Time:  %v\n", stats.MinDuration)
-	fmt.Printf("Max Response Time:  %v\n", stats.MaxDuration)
-	fmt.Printf("Avg Response Time:  %v\n", stats.AvgDuration)
-	fmt.Printf("Total Bytes:        %d\n", stats.TotalBytes)
+	fmt.Printf("Total Requests: %d | Successful: %d | Failed: %d\n", stats.TotalRequests, stats.SuccessRequests, stats.FailedRequests)
+	fmt.Printf("Duration: %v | Avg Response Time: %v\n", stats.TotalDuration, stats.AvgDuration)
+	fmt.Printf("Min Response Time: %v | Max Response Time: %v\n", stats.MinDuration, stats.MaxDuration)
+	fmt.Printf("Total Bytes Transferred: %d\n", stats.TotalBytes)
 
 	if stats.TotalDuration.Seconds() > 0 {
-		fmt.Printf("Requests/sec:       %.2f\n", float64(stats.TotalRequests)/stats.TotalDuration.Seconds())
-		fmt.Printf("Throughput (KB/s):  %.2f\n", float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
+		fmt.Printf("Throughput: %.2f req/s | %.2f KB/s\n",
+			float64(stats.TotalRequests)/stats.TotalDuration.Seconds(),
+			float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
 	} else {
-		fmt.Printf("Requests/sec:       N/A (Total duration is zero)\n")
-		fmt.Printf("Throughput (KB/s):  N/A (Total duration is zero)\n")
+		fmt.Printf("Throughput: N/A\n")
 	}
 
 	if stats.TotalRequests > 0 {
@@ -326,6 +325,6 @@ func printStats(stats *LoadTestStats) {
 		} else if successRate < 90 {
 			successColor = colorYellow
 		}
-		fmt.Printf("Success Rate:       %s%.2f%%%s\n", successColor, successRate, colorReset)
+		fmt.Printf("Success Rate: %s%.2f%%%s\n", successColor, successRate, colorReset)
 	}
 }
