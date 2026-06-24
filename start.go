@@ -1,18 +1,20 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-	"time"
+	"bufio"        // Untuk membaca input dari terminal
+	"bytes"        // Untuk membuat io.Reader dari string body
+	"fmt"          // Untuk mencetak output
+	"io"           // Untuk io.Reader dan io.ReadAll
+	"net/http"     // Untuk membuat permintaan HTTP
+	"os"           // Untuk os.Stdin, os.Stdout
+	"strconv"      // Untuk konversi string ke integer
+	"strings"      // Untuk manipulasi string (TrimSpace, ToUpper)
+	"sync"         // Untuk WaitGroup dan Mutex
+	"sync/atomic"  // Untuk operasi atomic pada counter
+	"time"         // Untuk durasi, sleep, dan timestamp
 )
 
+// LoadTestStats menyimpan statistik pengujian beban
 type LoadTestStats struct {
 	TotalRequests   int64
 	SuccessRequests int64
@@ -36,7 +38,7 @@ const (
 	colorUnbold  = "\033[22m"
 )
 
-// Fungsi helper untuk meminta input dari pengguna dengan prompt
+// getUserInput meminta input string dari pengguna dengan nilai default.
 func getUserInput(prompt string, defaultValue string) string {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("%s (default: %s): ", prompt, defaultValue)
@@ -52,7 +54,7 @@ func getUserInput(prompt string, defaultValue string) string {
 	return input
 }
 
-// Fungsi helper untuk meminta input durasi dari pengguna
+// getUserDurationInput meminta input durasi dari pengguna dengan nilai default.
 func getUserDurationInput(prompt string, defaultValue time.Duration) time.Duration {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("%s (default: %v): ", prompt, defaultValue)
@@ -73,7 +75,7 @@ func getUserDurationInput(prompt string, defaultValue time.Duration) time.Durati
 	return duration
 }
 
-// Fungsi helper untuk meminta input integer dari pengguna
+// getUserIntInput meminta input integer dari pengguna dengan nilai default.
 func getUserIntInput(prompt string, defaultValue int) int {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Printf("%s (default: %d): ", prompt, defaultValue)
@@ -94,7 +96,7 @@ func getUserIntInput(prompt string, defaultValue int) int {
 	return val
 }
 
-// Fungsi helper untuk meminta input integer positif dari pengguna
+// getUserPositiveIntInput meminta input integer positif dari pengguna.
 func getUserPositiveIntInput(prompt string, defaultValue int) int {
 	val := getUserIntInput(prompt, defaultValue)
 	if val <= 0 {
@@ -104,7 +106,7 @@ func getUserPositiveIntInput(prompt string, defaultValue int) int {
 	return val
 }
 
-// Fungsi untuk mendapatkan kode warna berdasarkan status code HTTP
+// getStatusCodeColor mengembalikan kode warna ANSI berdasarkan status code HTTP.
 func getStatusCodeColor(statusCode int) string {
 	switch {
 	case statusCode >= 200 && statusCode < 300:
@@ -138,8 +140,20 @@ func main() {
 	timeout := getUserDurationInput("Enter request timeout", 10*time.Second)
 
 	// Meminta Method
-	method := getUserInput("Enter HTTP method (GET, POST, etc.)", "GET")
+	method := getUserInput("Enter HTTP method (GET, POST, PUT, DELETE, etc.)", "GET")
 	method = strings.ToUpper(method)
+
+	// Inisialisasi body dan contentType sebagai string kosong.
+	var requestBody string = ""
+	var contentType string = ""
+
+	// Tentukan apakah method memerlukan body (misal: POST, PUT, PATCH)
+	if method == "POST" || method == "PUT" || method == "PATCH" {
+		requestBody = getUserInput("Enter request body (leave empty for none)", "")
+		if requestBody != "" {
+			contentType = getUserInput("Enter Content-Type header (e.g., application/json, application/x-www-form-urlencoded)", "application/json")
+		}
+	}
 
 	// -------------------------------------------------------------
 
@@ -160,13 +174,23 @@ func main() {
 	fmt.Printf("Concurrency: %d\n", concurrency)
 	fmt.Printf("Duration: %v\n", duration)
 	fmt.Printf("Timeout: %v\n", timeout)
-	fmt.Printf("Method: %s\n\n", method)
+	fmt.Printf("Method: %s\n", method)
+	if requestBody != "" {
+		fmt.Printf("Content-Type: %s\n", contentType)
+		// Berhati-hatilah dalam mencetak body jika sangat besar, bisa memenuhi layar
+		if debugMode && len(requestBody) < 200 { // Hanya cetak jika mode debug dan body tidak terlalu panjang
+			fmt.Printf("Request Body: %s\n", requestBody)
+		} else if debugMode && len(requestBody) >= 200 {
+			fmt.Printf("Request Body: [Too long to display]\n")
+		}
+	}
+	fmt.Println()
 
 	// Initialize stats
 	stats := &LoadTestStats{
-		MinDuration: time.Hour,
+		MinDuration: time.Hour, // Inisialisasi MinDuration ke nilai yang sangat besar
 	}
-	var mu sync.Mutex
+	var mu sync.Mutex // Mutex untuk melindungi akses ke stats
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -183,15 +207,16 @@ func main() {
 	// Schedule stop after duration
 	go func() {
 		time.Sleep(duration)
-		close(stopChan)
+		close(stopChan) // Kirim sinyal untuk menghentikan worker
 	}()
 
 	// Launch concurrent workers
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			worker(client, targetURL, method, stopChan, stats, &mu, debugMode)
+			defer wg.Done() // Pastikan wg.Done() dipanggil saat goroutine selesai
+			// Kirim requestBody dan contentType ke worker jika mereka tidak kosong
+			worker(client, targetURL, method, requestBody, contentType, stopChan, stats, &mu, debugMode)
 		}()
 	}
 
@@ -201,6 +226,8 @@ func main() {
 	// Calculate final stats
 	stats.TotalDuration = time.Since(startTime)
 	if stats.TotalRequests > 0 {
+		// Perhitungan AvgDuration. Perhatikan bahwa ini adalah rata-rata dari total waktu dibagi total request.
+		// Ini mungkin tidak sepenuhnya akurat jika ada banyak request yang gagal atau waktu totalnya sangat pendek.
 		stats.AvgDuration = time.Duration(int64(stats.TotalDuration) / stats.TotalRequests)
 	}
 
@@ -208,24 +235,36 @@ func main() {
 	printStats(stats)
 }
 
-// Fungsi worker melakukan satu request HTTP
-func worker(client *http.Client, targetURL, method string, stopChan chan struct{}, stats *LoadTestStats, mu *sync.Mutex, debugMode bool) {
+// worker melakukan satu request HTTP
+func worker(client *http.Client, targetURL, method, requestBody, contentType string, stopChan chan struct{}, stats *LoadTestStats, mu *sync.Mutex, debugMode bool) {
 	for {
 		select {
 		case <-stopChan:
 			return
 		default:
 			startTime := time.Now()
-			req, err := http.NewRequest(method, targetURL, nil)
+			var reqBodyReader io.Reader = nil // Default nil jika tidak ada body
+			if requestBody != "" {
+				reqBodyReader = bytes.NewBufferString(requestBody) // Buat io.Reader dari string body
+			}
+
+			req, err := http.NewRequest(method, targetURL, reqBodyReader) // Gunakan reqBodyReader
 			if err != nil {
 				mu.Lock()
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					fmt.Printf("%s[DEBUG] Error creating request: %v (Duration: %v)%s\n", colorGray, err, time.Since(startTime), colorReset)
+					// Perbaikan output debug: Gunakan Sprintf dengan hati-hati atau Fprintln
+					debugMsg := fmt.Sprintf("%s[DEBUG] Error creating request: %v (Duration: %v)%s", colorGray, err, time.Since(startTime), colorReset)
+					fmt.Fprintln(os.Stdout, debugMsg) // Gunakan Fprintln untuk mencetak string
 				}
 				mu.Unlock()
 				continue
+			}
+
+			// Set header jika body tidak kosong
+			if requestBody != "" && contentType != "" {
+				req.Header.Set("Content-Type", contentType)
 			}
 			req.Header.Set("User-Agent", "Go-Load-Tester/1.0")
 
@@ -238,12 +277,13 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
-					fmt.Printf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s\n", colorGray, targetURL, err, duration, colorReset)
+					debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s", colorGray, targetURL, err, duration, colorReset)
+					fmt.Fprintln(os.Stdout, debugMsg)
 				}
 			} else {
 				// Respons berhasil diterima (tidak ada error koneksi/timeout)
-				statusCode := resp.StatusCode // Gunakan statusCode di sini
-				defer resp.Body.Close()       // Pastikan body ditutup
+				statusCode := resp.StatusCode
+				defer resp.Body.Close() // Pastikan body ditutup
 
 				if statusCode < 200 || statusCode >= 300 {
 					// Status code bukan 2xx (error pada server atau client)
@@ -251,8 +291,11 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 					if debugMode {
 						bodyBytes, _ := io.ReadAll(resp.Body) // Baca body untuk debug
 						respBody := string(bodyBytes)
-						fmt.Printf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s\n",
-							colorGray, targetURL, getStatusCodeColor(statusCode), statusCode, colorReset, duration, respBody, colorGray, colorReset)
+						// Perbaikan format debug: Pastikan argumen sesuai dengan placeholder
+						statusCodeColor := getStatusCodeColor(statusCode)
+						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s",
+							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, respBody, colorGray, colorReset)
+						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				} else {
 					// Permintaan sukses (status code 2xx)
@@ -260,6 +303,7 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 					bodyBytes, _ := io.ReadAll(resp.Body)
 					stats.TotalBytes += int64(len(bodyBytes))
 
+					// Update min/max duration HANYA untuk permintaan yang SUKSES
 					if duration < stats.MinDuration {
 						stats.MinDuration = duration
 					}
@@ -267,8 +311,10 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 						stats.MaxDuration = duration
 					}
 					if debugMode {
-						fmt.Printf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s\n",
-							colorGray, targetURL, getStatusCodeColor(statusCode), statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
+						statusCodeColor := getStatusCodeColor(statusCode)
+						debugMsg := fmt.Sprintf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s",
+							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
+						fmt.Fprintln(os.Stdout, debugMsg)
 					}
 				}
 			}
@@ -277,7 +323,7 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 	}
 }
 
-// Fungsi printStats untuk menampilkan hasil
+// printStats menampilkan hasil pengujian beban.
 func printStats(stats *LoadTestStats) {
 	fmt.Printf("\n=== Load Testing Results ===\n")
 	fmt.Printf("Total Requests:     %d\n", stats.TotalRequests)
@@ -289,6 +335,7 @@ func printStats(stats *LoadTestStats) {
 	fmt.Printf("Avg Response Time:  %v\n", stats.AvgDuration)
 	fmt.Printf("Total Bytes:        %d\n", stats.TotalBytes)
 
+	// Hitung dan tampilkan Requests/sec dan Throughput
 	if stats.TotalDuration.Seconds() > 0 {
 		fmt.Printf("Requests/sec:       %.2f\n", float64(stats.TotalRequests)/stats.TotalDuration.Seconds())
 		fmt.Printf("Throughput (KB/s):  %.2f\n", float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
@@ -297,9 +344,9 @@ func printStats(stats *LoadTestStats) {
 		fmt.Printf("Throughput (KB/s):  N/A (Total duration is zero)\n")
 	}
 
+	// Hitung dan tampilkan Success Rate dengan warna
 	if stats.TotalRequests > 0 {
 		successRate := (float64(stats.SuccessRequests) / float64(stats.TotalRequests)) * 100
-		// Tambahkan warna pada Success Rate jika diinginkan
 		successColor := colorGreen
 		if successRate < 50 {
 			successColor = colorRed
