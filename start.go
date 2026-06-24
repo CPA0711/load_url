@@ -114,7 +114,7 @@ func getStatusCodeColor(statusCode int) string {
 	case statusCode >= 400 || statusCode >= 500:
 		return colorRed
 	default:
-		return colorGray // Status tidak dikenal
+		return colorGray // Status tidak dikenal atau error koneksi
 	}
 }
 
@@ -155,7 +155,7 @@ func main() {
 	// ----------------------------------------------
 
 	fmt.Printf("=== Load Testing Started ===\n")
-	fmt.Printf("Debug Mode: %t\n", debugMode) // Tampilkan status debug mode
+	fmt.Printf("Debug Mode: %t\n", debugMode)
 	fmt.Printf("Target URL: %s\n", targetURL)
 	fmt.Printf("Concurrency: %d\n", concurrency)
 	fmt.Printf("Duration: %v\n", duration)
@@ -191,7 +191,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			worker(client, targetURL, method, stopChan, stats, &mu, debugMode) // Teruskan debugMode ke worker
+			worker(client, targetURL, method, stopChan, stats, &mu, debugMode)
 		}()
 	}
 
@@ -222,7 +222,7 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					fmt.Printf("%s[DEBUG] Error creating request: %v%s\n", colorGray, err, colorReset)
+					fmt.Printf("%s[DEBUG] Error creating request: %v (Duration: %v)%s\n", colorGray, err, time.Since(startTime), colorReset)
 				}
 				mu.Unlock()
 				continue
@@ -235,30 +235,29 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 			mu.Lock()
 			atomic.AddInt64(&stats.TotalRequests, 1)
 
-			var statusCode int = -1 // Default jika err != nil
-			var respBody string = "" // Untuk menyimpan body respons jika debug
-
 			if err != nil {
 				stats.FailedRequests++
 				if debugMode {
 					fmt.Printf("%s[DEBUG] Request to %s failed: %v (Duration: %v)%s\n", colorGray, targetURL, err, duration, colorReset)
 				}
 			} else {
-				statusCode = resp.StatusCode
-				defer resp.Body.Close()
+				// Respons berhasil diterima (tidak ada error koneksi/timeout)
+				statusCode := resp.StatusCode // Gunakan statusCode di sini
+				defer resp.Body.Close()       // Pastikan body ditutup
 
-				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				if statusCode < 200 || statusCode >= 300 {
+					// Status code bukan 2xx (error pada server atau client)
 					stats.FailedRequests++
 					if debugMode {
-						// Baca body untuk debug jika status tidak sukses
-						bodyBytes, _ := io.ReadAll(resp.Body)
-						respBody = string(bodyBytes)
-						fmt.Printf("%s[DEBUG] Request to %s failed with status %d (Duration: %v) - Body: %s%s\n", colorGray, targetURL, resp.StatusCode, duration, respBody, colorReset)
+						bodyBytes, _ := io.ReadAll(resp.Body) // Baca body untuk debug
+						respBody := string(bodyBytes)
+						fmt.Printf("%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s\n",
+							colorGray, targetURL, getStatusCodeColor(statusCode), statusCode, colorReset, duration, respBody, colorGray, colorReset)
 					}
 				} else {
+					// Permintaan sukses (status code 2xx)
 					stats.SuccessRequests++
 					bodyBytes, _ := io.ReadAll(resp.Body)
-					respBody = string(bodyBytes) // Simpan body untuk debug
 					stats.TotalBytes += int64(len(bodyBytes))
 
 					if duration < stats.MinDuration {
@@ -268,7 +267,8 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 						stats.MaxDuration = duration
 					}
 					if debugMode {
-						fmt.Printf("%s[DEBUG] Request to %s succeeded (Status: %d, Duration: %v, Bytes: %d)%s\n", colorGray, targetURL, resp.StatusCode, duration, len(bodyBytes), colorReset)
+						fmt.Printf("%s[DEBUG] Request to %s succeeded (Status: %s%d%s, Duration: %v, Bytes: %d)%s\n",
+							colorGray, targetURL, getStatusCodeColor(statusCode), statusCode, colorReset, duration, len(bodyBytes), colorGray, colorReset)
 					}
 				}
 			}
@@ -299,7 +299,13 @@ func printStats(stats *LoadTestStats) {
 
 	if stats.TotalRequests > 0 {
 		successRate := (float64(stats.SuccessRequests) / float64(stats.TotalRequests)) * 100
-		fmt.Printf("Success Rate:       %.2f%%\n", successRate)
+		// Tambahkan warna pada Success Rate jika diinginkan
+		successColor := colorGreen
+		if successRate < 50 {
+			successColor = colorRed
+		} else if successRate < 90 {
+			successColor = colorYellow
+		}
+		fmt.Printf("Success Rate:       %s%.2f%%%s\n", successColor, successRate, colorReset)
 	}
 }
-
