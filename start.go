@@ -177,8 +177,7 @@ func main() {
 	fmt.Printf("Method: %s\n", method)
 	if requestBody != "" {
 		fmt.Printf("Content-Type: %s\n", contentType)
-		// Berhati-hatilah dalam mencetak body jika sangat besar, bisa memenuhi layar
-		if debugMode && len(requestBody) < 200 { // Hanya cetak jika mode debug dan body tidak terlalu panjang
+		if debugMode && len(requestBody) < 200 {
 			fmt.Printf("Request Body: %s\n", requestBody)
 		} else if debugMode && len(requestBody) >= 200 {
 			fmt.Printf("Request Body: [Too long to display]\n")
@@ -215,7 +214,6 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done() // Pastikan wg.Done() dipanggil saat goroutine selesai
-			// Kirim requestBody dan contentType ke worker jika mereka tidak kosong
 			worker(client, targetURL, method, requestBody, contentType, stopChan, stats, &mu, debugMode)
 		}()
 	}
@@ -241,9 +239,9 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 			return
 		default:
 			startTime := time.Now()
-			var reqBodyReader io.Reader = nil // Default nil jika tidak ada body
+			var reqBodyReader io.Reader = nil
 			if requestBody != "" {
-				reqBodyReader = bytes.NewBufferString(requestBody) // Buat io.Reader dari string body
+				reqBodyReader = bytes.NewBufferString(requestBody)
 			}
 
 			req, err := http.NewRequest(method, targetURL, reqBodyReader)
@@ -252,14 +250,13 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 				atomic.AddInt64(&stats.TotalRequests, 1)
 				stats.FailedRequests++
 				if debugMode {
-					// Debug log yang lebih sederhana dan bersih
+					// Menggunakan fmt.Fprintf dengan string yang lengkap
 					fmt.Fprintf(os.Stdout, "%s[DEBUG] Error creating request: %v (Duration: %v)%s\n", colorGray, err, time.Since(startTime), colorReset)
 				}
 				mu.Unlock()
 				continue
 			}
 
-			// Set header jika body tidak kosong
 			if requestBody != "" && contentType != "" {
 				req.Header.Set("Content-Type", contentType)
 			}
@@ -286,7 +283,7 @@ func worker(client *http.Client, targetURL, method, requestBody, contentType str
 						bodyBytes, _ := io.ReadAll(resp.Body)
 						respBody := string(bodyBytes)
 						statusCodeColor := getStatusCodeColor(statusCode)
-						// Debug log yang lebih bersih
+						// Debug log yang lebih bersih, memastikan semua argumen sesuai
 						fmt.Fprintf(os.Stdout, "%s[DEBUG] Request to %s failed with status %s%d%s (Duration: %v) - Body: %s%s\n",
 							colorGray, targetURL, statusCodeColor, statusCode, colorReset, duration, respBody, colorGray, colorReset)
 					}
@@ -326,7 +323,6 @@ func printStats(stats *LoadTestStats) {
 	fmt.Printf("Avg Response Time:  %v\n", stats.AvgDuration)
 	fmt.Printf("Total Bytes:        %d\n", stats.TotalBytes)
 
-	// Hitung dan tampilkan Requests/sec dan Throughput
 	if stats.TotalDuration.Seconds() > 0 {
 		fmt.Printf("Requests/sec:       %.2f\n", float64(stats.TotalRequests)/stats.TotalDuration.Seconds())
 		fmt.Printf("Throughput (KB/s):  %.2f\n", float64(stats.TotalBytes)/stats.TotalDuration.Seconds()/1024)
@@ -335,7 +331,6 @@ func printStats(stats *LoadTestStats) {
 		fmt.Printf("Throughput (KB/s):  N/A (Total duration is zero)\n")
 	}
 
-	// Hitung dan tampilkan Success Rate dengan warna
 	if stats.TotalRequests > 0 {
 		successRate := (float64(stats.SuccessRequests) / float64(stats.TotalRequests)) * 100
 		successColor := colorGreen
