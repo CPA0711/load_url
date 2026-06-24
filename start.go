@@ -1,10 +1,12 @@
 package main
 
 import (
-	"fmt"     // fmt tetap dibutuhkan untuk Printf
-	"io"      // io tetap dibutuhkan untuk ReadAll
-	"net/http" // net/http tetap dibutuhkan untuk http.Client dan http.NewRequest
-	// "net/url" // Tidak digunakan dalam kode ini, jadi bisa dihapus atau tetap jika untuk validasi di masa depan.
+	"bufio"    // Diperlukan untuk membaca input dari terminal
+	"fmt"
+	"io"
+	"net/http"
+	"os"       // Diperlukan untuk os.Stdin
+	"strings"  // Diperlukan untuk memanipulasi string input
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,17 +29,99 @@ const (
 	colorReset = "\033[0m"
 )
 
+// Fungsi helper untuk meminta input dari pengguna dengan prompt
+func getUserInput(prompt string, defaultValue string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s (default: %s): ", prompt, defaultValue)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return defaultValue // Kembali ke default jika ada error
+	}
+	// Hapus karakter newline dari input
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return defaultValue // Gunakan default jika input kosong
+	}
+	return input
+}
+
+// Fungsi helper untuk meminta input durasi dari pengguna
+func getUserDurationInput(prompt string, defaultValue time.Duration) time.Duration {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s (default: %v): ", prompt, defaultValue)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return defaultValue
+	}
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return defaultValue
+	}
+	duration, err := time.ParseDuration(input)
+	if err != nil {
+		fmt.Printf("Invalid duration format '%s'. Using default: %v\n", input, defaultValue)
+		return defaultValue
+	}
+	return duration
+}
+
+// Fungsi helper untuk meminta input integer dari pengguna
+func getUserIntInput(prompt string, defaultValue int) int {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Printf("%s (default: %d): ", prompt, defaultValue)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		return defaultValue
+	}
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return defaultValue
+	}
+	val, err := strconv.Atoi(input) // Gunakan strconv untuk konversi ke integer
+	if err != nil {
+		fmt.Printf("Invalid integer format '%s'. Using default: %d\n", input, defaultValue)
+		return defaultValue
+	}
+	return val
+}
+
+// Fungsi helper untuk meminta input integer positif dari pengguna
+func getUserPositiveIntInput(prompt string, defaultValue int) int {
+	val := getUserIntInput(prompt, defaultValue)
+	if val <= 0 {
+		fmt.Printf("Value must be positive. Using default: %d\n", defaultValue)
+		return defaultValue
+	}
+	return val
+}
+
+
 func main() {
-	// --- Input Parameter Manual untuk SEMUA Parameter ---
-	targetURL := "http://localhost:8080"      // Ganti dengan URL target Anda
-	concurrency := 10                         // Jumlah permintaan bersamaan
-	duration := 30 * time.Second              // Durasi pengujian
-	timeout := 10 * time.Second               // Batas waktu permintaan
-	method := "GET"                           // Metode HTTP (GET, POST, dll.)
-	// ----------------------------------------------------
+	// --- Ambil Input Parameter dari Pengguna secara Interaktif ---
+
+	// Meminta URL
+	targetURL := getUserInput("Enter target URL", "http://localhost:8080")
+
+	// Meminta Concurrency
+	concurrency := getUserPositiveIntInput("Enter number of concurrent requests", 10)
+
+	// Meminta Duration
+	duration := getUserDurationInput("Enter test duration", 30*time.Second)
+
+	// Meminta Timeout
+	timeout := getUserDurationInput("Enter request timeout", 10*time.Second)
+
+	// Meminta Method
+	method := getUserInput("Enter HTTP method (GET, POST, etc.)", "GET")
+	// Konversi ke uppercase untuk konsistensi
+	method = strings.ToUpper(method)
+
+	// -------------------------------------------------------------
 
 	// --- Banner CPA dengan Warna Cyan ---
-	// Gunakan tanda kutip terbalik (`) untuk string multi-baris
 	bannerCPA := `
    ______      ________
   / ____/___  / ____/ /______
@@ -45,7 +129,6 @@ func main() {
 / /_/ / /_/ / /_/ / /_/ /
 \____/\____/\____/\__/_/
 `
-	// Cetak banner
 	fmt.Printf("%s%s%s", colorCyan, bannerCPA, colorReset)
 	// ----------------------------------------------
 
@@ -58,13 +141,13 @@ func main() {
 
 	// Initialize stats
 	stats := &LoadTestStats{
-		MinDuration: time.Hour,
+		MinDuration: time.Hour, // Inisialisasi MinDuration ke nilai yang sangat besar
 	}
-	var mu sync.Mutex
+	var mu sync.Mutex // Mutex untuk melindungi akses ke stats
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: timeout, // Gunakan variabel timeout manual
+		Timeout: timeout, // Gunakan timeout manual
 	}
 
 	// Channel to control test duration
@@ -76,17 +159,15 @@ func main() {
 
 	// Schedule stop after duration
 	go func() {
-		time.Sleep(duration) // Gunakan variabel duration manual
-		close(stopChan)
+		time.Sleep(duration) // Gunakan duration manual
+		close(stopChan)      // Kirim sinyal untuk menghentikan worker
 	}()
 
 	// Launch concurrent workers
-	for i := 0; i < concurrency; i++ { // Gunakan variabel concurrency manual
+	for i := 0; i < concurrency; i++ { // Gunakan concurrency manual
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			// Panggil worker dengan semua parameter yang sudah didefinisikan manual
-			// Pastikan parameter yang diteruskan sesuai dengan definisi fungsi worker
+			defer wg.Done() // Pastikan wg.Done() dipanggil saat goroutine selesai
 			worker(client, targetURL, method, stopChan, stats, &mu)
 		}()
 	}
@@ -104,15 +185,22 @@ func main() {
 	printStats(stats)
 }
 
+// Fungsi worker melakukan satu request HTTP (sama seperti sebelumnya)
 func worker(client *http.Client, targetURL, method string, stopChan chan struct{}, stats *LoadTestStats, mu *sync.Mutex) {
 	for {
 		select {
 		case <-stopChan:
 			return
 		default:
-			// Perform request
 			startTime := time.Now()
-			req, _ := http.NewRequest(method, targetURL, nil) // Menggunakan method dan targetURL manual
+			req, err := http.NewRequest(method, targetURL, nil)
+			if err != nil {
+				mu.Lock()
+				atomic.AddInt64(&stats.TotalRequests, 1)
+				stats.FailedRequests++
+				mu.Unlock()
+				continue
+			}
 			req.Header.Set("User-Agent", "Go-Load-Tester/1.0")
 
 			resp, err := client.Do(req)
@@ -126,27 +214,28 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 				mu.Unlock()
 				continue
 			}
+			defer resp.Body.Close()
 
-			// Read response body
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				stats.FailedRequests++
+			} else {
+				stats.SuccessRequests++
+				body, _ := io.ReadAll(resp.Body)
+				stats.TotalBytes += int64(len(body))
 
-			stats.SuccessRequests++
-			stats.TotalBytes += int64(len(body))
-
-			// Update min/max duration
-			if duration < stats.MinDuration {
-				stats.MinDuration = duration
+				if duration < stats.MinDuration {
+					stats.MinDuration = duration
+				}
+				if duration > stats.MaxDuration {
+					stats.MaxDuration = duration
+				}
 			}
-			if duration > stats.MaxDuration {
-				stats.MaxDuration = duration
-			}
-
 			mu.Unlock()
 		}
 	}
 }
 
+// Fungsi printStats untuk menampilkan hasil (sama seperti sebelumnya)
 func printStats(stats *LoadTestStats) {
 	fmt.Printf("\n=== Load Testing Results ===\n")
 	fmt.Printf("Total Requests:     %d\n", stats.TotalRequests)
