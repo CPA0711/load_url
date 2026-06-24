@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
+	"fmt"     // fmt tetap dibutuhkan untuk Printf
+	"io"      // io tetap dibutuhkan untuk ReadAll
+	"net/http" // net/http tetap dibutuhkan untuk http.Client dan http.NewRequest
+	// "net/url" // Tidak digunakan dalam kode ini, jadi bisa dihapus atau tetap jika untuk validasi di masa depan.
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,11 +36,16 @@ func main() {
 	method := "GET"                           // Metode HTTP (GET, POST, dll.)
 	// ----------------------------------------------------
 
-	// --- Tambahkan Banner CPA dengan Warna Cyan ---
+	// --- Banner CPA dengan Warna Cyan ---
+	// Gunakan tanda kutip terbalik (`) untuk string multi-baris
 	bannerCPA := `
-   ┏━╸┏━┓┏━┓   ╺┳╸┏━┓┏━┓╻  ┏━┓
-   ┃    ┣━┛┣━┫    ┃  ┃  ┃┃  ┃┃   ┗━┓
-   ┗━╸╹    ╹  ╹    ╹  ┗━┛┗━┛┗━╸┗━┛
+   ______      ________
+  / ____/___  / ____/ /______
+ / / __/ __ \/ / __/ __/ ___/
+/ /_/ / /_/ / /_/ / /_/ /
+\____/\____/\____/\__/_/
+`
+	// Cetak banner
 	fmt.Printf("%s%s%s", colorCyan, bannerCPA, colorReset)
 	// ----------------------------------------------
 
@@ -59,7 +64,7 @@ func main() {
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: timeout, // Gunakan variabel timeout manual
 	}
 
 	// Channel to control test duration
@@ -71,15 +76,17 @@ func main() {
 
 	// Schedule stop after duration
 	go func() {
-		time.Sleep(duration)
+		time.Sleep(duration) // Gunakan variabel duration manual
 		close(stopChan)
 	}()
 
 	// Launch concurrent workers
-	for i := 0; i < concurrency; i++ {
+	for i := 0; i < concurrency; i++ { // Gunakan variabel concurrency manual
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Panggil worker dengan semua parameter yang sudah didefinisikan manual
+			// Pastikan parameter yang diteruskan sesuai dengan definisi fungsi worker
 			worker(client, targetURL, method, stopChan, stats, &mu)
 		}()
 	}
@@ -105,7 +112,7 @@ func worker(client *http.Client, targetURL, method string, stopChan chan struct{
 		default:
 			// Perform request
 			startTime := time.Now()
-			req, _ := http.NewRequest(method, targetURL, nil)
+			req, _ := http.NewRequest(method, targetURL, nil) // Menggunakan method dan targetURL manual
 			req.Header.Set("User-Agent", "Go-Load-Tester/1.0")
 
 			resp, err := client.Do(req)
