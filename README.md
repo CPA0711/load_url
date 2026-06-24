@@ -1,4 +1,5 @@
 بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ
 
-go build -o load_url load_url.go
-./load_url
+go build -o start start.go
+
+./start
